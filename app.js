@@ -35,37 +35,56 @@ server.listen(app.get('port'), function(){
 
 
 // redis example
-//var redis = require("redis");
-//var client = redis.createClient();
-//
-//client.on("error", function(err) {
-//    console.log("Error " + err)
-//});
-//client.set('HELLO', [1, 2, 3], redis.print);
-//client.set('HELLO', "WORLD23", redis.print);
-//client.get('HELLO' ,function(err, reply){
-//    console.log(reply[0]);
-//});
+var redis = require("redis");
+var client = redis.createClient();
+var rid=0;
+
+client.on("error", function(err) {
+    console.log("Error " + err)
+});
+
 // socket.io example
 var io = require('socket.io').listen(server)
+var util= require('util');
 var chatArr = new Array();
-var pointArr = new Array();
 
 io.sockets.on('connection', function(socket){
     socket.emit('message', {message : 'welcome to the chat'});
     socket.emit('chatSync', {chatArr : chatArr});
-    socket.emit('canvasSync', {pointArr : pointArr});
+
+    socket.on('joinRoom',function(data){
+        console.log("JOIN"+data.key);
+
+        socket.set('room',"A"+data.key,function(){
+            console.log("room"+data.key);
+        });
+
+        socket.join("A"+data.key);
+
+        client.llen("A"+data.key, function(err,reply){
+            for(var j=0;j<reply;j++){
+                client.lindex("A"+data.key,j, function(err,data){
+                    socket.emit('senddata',JSON.parse(data));
+                });
+            }
+        });
+    });
 
     socket.on('send', function(data) {
         io.sockets.emit('message'. data);
-    })
+    });
+
     socket.on('message', function(data){
         socket.broadcast.emit('message', {name : data.name, message : data.message});
         chatArr.push(data);
     });
 
+    socket.on('redis', function(data){
+//        client.hgetall(0,function(err, reply){console.log(reply.points)});
+    });
+
     socket.on('senddata', function(data){
-        socket.broadcast.emit('senddata', {
+        socket.broadcast.to('A'+data.key).emit('senddata', {
             strokeWidth : data.strokeWidth,
             strokeColor : data.strokeColor,
             fillColor : data.fillColor,
@@ -76,13 +95,16 @@ io.sockets.on('connection', function(socket){
             isErase : data.isErase,
             points : data.points
         });
-        pointArr.push(data);
+
+        client.rpush("A"+data.key, JSON.stringify(data,null,4), redis.print);
     });
 
     socket.on('clear', function(data)
     {
-        pointArr = [];
         socket.broadcast.emit('clear');
         socket.emit('clear');
+        client.del('A0');
     });
+
+
 });
